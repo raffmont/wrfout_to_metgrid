@@ -31,12 +31,14 @@ from netCDF4 import Dataset
 
 import pywinter.winter as pyw
 
-RD = 287.0
-CP = 1004.0
-P0 = 100000.0
-G = 9.81
-EPS = 1e-12
+# Physical constants used in thermodynamic conversions.
+RD = 287.0  # Gas constant for dry air [J kg-1 K-1].
+CP = 1004.0  # Specific heat of dry air at constant pressure [J kg-1 K-1].
+P0 = 100000.0  # Reference pressure for potential temperature [Pa].
+G = 9.81  # Gravitational acceleration [m s-2].
+EPS = 1e-12  # Tiny epsilon to avoid divide-by-zero.
 
+# WPS "surface" level identifier used by metgrid and pywinter.
 WPS_SURFACE_LEVEL = "200100"  # IMPORTANT: must match METGRID.TBL "(200100)" and pywinter expects len(level)
 
 
@@ -46,6 +48,7 @@ WPS_SURFACE_LEVEL = "200100"  # IMPORTANT: must match METGRID.TBL "(200100)" and
 
 @dataclass
 class WpsConfig:
+    """Container for the small subset of namelist.wps fields we care about."""
     max_dom: int = 1
     interval_seconds: int = 0
     ungrib_prefix: Optional[str] = None
@@ -56,20 +59,24 @@ class WpsConfig:
     parent_grid_ratio: List[int] = None
 
     def __post_init__(self):
+        # Normalize optional lists to avoid None checks later.
         self.modlev_press_pa = self.modlev_press_pa or []
         self.parent_grid_ratio = self.parent_grid_ratio or []
 
 
 def _strip_comments(line: str) -> str:
+    """Remove Fortran-style comments and surrounding whitespace."""
     return line.split("!")[0].strip()
 
 
 def _parse_string_value(s: str) -> str:
+    """Extract a quoted string or fallback to a trimmed raw token."""
     m = re.search(r"['\"]([^'\"]+)['\"]", s)
     return m.group(1) if m else s.strip().strip(",").strip()
 
 
 def _parse_int_value(rhs: str) -> int:
+    """Parse the first integer found on the right-hand side of a namelist line."""
     m = re.search(r"[-+]?\d+", rhs)
     if not m:
         raise ValueError(f"Cannot parse int from: {rhs}")
@@ -77,6 +84,7 @@ def _parse_int_value(rhs: str) -> int:
 
 
 def _parse_float_value(rhs: str) -> float:
+    """Parse the first float found on the right-hand side of a namelist line."""
     m = re.search(r"[-+]?\d+(?:\.\d+)?", rhs)
     if not m:
         raise ValueError(f"Cannot parse float from: {rhs}")
@@ -84,6 +92,7 @@ def _parse_float_value(rhs: str) -> float:
 
 
 def _parse_multiline_number_list(lines: List[str], start_idx: int) -> Tuple[List[float], int]:
+    """Collect numeric values that may span multiple namelist lines."""
     vals: List[float] = []
     i = start_idx
     first = True
@@ -107,11 +116,12 @@ def _parse_multiline_number_list(lines: List[str], start_idx: int) -> Tuple[List
 
 
 def parse_namelist_wps(path: str) -> WpsConfig:
+    """Parse only the namelist.wps fields used by this converter."""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         lines = f.readlines()
 
-    cfg = WpsConfig()
-    current_section: Optional[str] = None
+    cfg = WpsConfig()  # Initialize with defaults.
+    current_section: Optional[str] = None  # Track current &section.
 
     i = 0
     while i < len(lines):
@@ -172,6 +182,7 @@ def parse_namelist_wps(path: str) -> WpsConfig:
 
 
 def parse_domain_token(s: str) -> int:
+    """Convert a domain token like 'd04' or '4' into an integer."""
     s = s.strip().lower()
     if s.startswith("d"):
         s = s[1:]
@@ -185,6 +196,7 @@ def parse_domain_token(s: str) -> int:
 # -----------------------------
 
 def parse_metgrid_tbl_names(path: str) -> List[str]:
+    """Extract ordered, unique field names from METGRID.TBL."""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         txt = f.read()
     names = re.findall(r"^\s*name\s*=\s*([A-Za-z0-9_]+)\s*$", txt, flags=re.MULTILINE)
@@ -199,10 +211,12 @@ def parse_metgrid_tbl_names(path: str) -> List[str]:
 
 # Range templates
 def is_soil_range_template(name: str) -> bool:
+    """Check for soil range template names like ST000010."""
     return bool(re.fullmatch(r"(ST|SM|SW)\d{6}", name))
 
 
 def parse_range_depth_cm(name: str) -> Tuple[int, int]:
+    """Parse soil range template depth limits in centimeters."""
     m = re.fullmatch(r"(ST|SM|SW)(\d{3})(\d{3})", name)
     if not m:
         raise ValueError(f"Not a soil range template name: {name}")
@@ -215,10 +229,12 @@ def parse_range_depth_cm(name: str) -> Tuple[int, int]:
 
 # Point-depth templates
 def is_soil_point_template(name: str) -> bool:
+    """Check for soil point template names like SOILM020."""
     return bool(re.fullmatch(r"SOIL[MT]\d{3}", name))
 
 
 def parse_point_depth_cm(name: str) -> int:
+    """Parse a soil point depth in centimeters from its template name."""
     m = re.fullmatch(r"SOIL[MT](\d{3})", name)
     if not m:
         raise ValueError(f"Not a soil point template name: {name}")
@@ -249,6 +265,7 @@ def build_wanted_set(tbl_names: List[str]) -> Set[str]:
 # -----------------------------
 
 def infer_domain_dx_m(cfg: WpsConfig, dom: int) -> float:
+    """Infer grid spacing for a nested domain using parent_grid_ratio."""
     if cfg.geogrid_dx is None:
         raise RuntimeError("Cannot infer dx: &geogrid dx missing in namelist.wps")
     if dom <= 1:
@@ -280,6 +297,7 @@ def best_interval_from_dx(dx_m: float) -> int:
 # -----------------------------
 
 def read_times(ds: Dataset) -> List[datetime]:
+    """Read WRF 'Times' variable into a list of datetimes."""
     if "Times" not in ds.variables:
         raise RuntimeError("Missing Times variable in wrfout.")
     t = ds.variables["Times"][:]
@@ -291,6 +309,7 @@ def read_times(ds: Dataset) -> List[datetime]:
 
 
 def get_geo(ds: Dataset, iswin_grid: bool = True) -> object:
+    """Build the pywinter georeference object from WRF metadata."""
     map_proj = int(getattr(ds, "MAP_PROJ"))
     dx_m = float(getattr(ds, "DX"))
     dy_m = float(getattr(ds, "DY"))
@@ -324,6 +343,7 @@ def get_geo(ds: Dataset, iswin_grid: bool = True) -> object:
 
 
 def vget(ds: Dataset, name: str, ti: int) -> Optional[np.ndarray]:
+    """Return a 2D or 3D array from a WRF variable at time index ti."""
     if name not in ds.variables:
         return None
     v = ds.variables[name]
@@ -335,30 +355,36 @@ def vget(ds: Dataset, name: str, ti: int) -> Optional[np.ndarray]:
 
 
 def destagger_x(u_stag: np.ndarray) -> np.ndarray:
+    """Destagger U by averaging adjacent x-staggered grid cells."""
     return 0.5 * (u_stag[:, :, :-1] + u_stag[:, :, 1:])
 
 
 def destagger_y(v_stag: np.ndarray) -> np.ndarray:
+    """Destagger V by averaging adjacent y-staggered grid cells."""
     return 0.5 * (v_stag[:, :-1, :] + v_stag[:, 1:, :])
 
 
 def temp_k_from_wrf(T_pert: np.ndarray, p_pa: np.ndarray) -> np.ndarray:
+    """Convert WRF perturbation potential temperature to absolute temperature."""
     theta = T_pert + 300.0
     return theta * np.power(np.maximum(p_pa, 1.0) / P0, RD / CP)
 
 
 def z_mass_from_ph(ph: np.ndarray, phb: np.ndarray) -> np.ndarray:
+    """Compute mass-level geopotential height from staggered geopotential."""
     z_stag = (ph + phb) / G
     return 0.5 * (z_stag[:-1, :, :] + z_stag[1:, :, :])
 
 
 def rotate_uv_to_earth(u: np.ndarray, v: np.ndarray, cosalpha: np.ndarray, sinalpha: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Rotate grid-relative winds to earth-relative using rotation angles."""
     u_e = u * cosalpha - v * sinalpha
     v_e = u * sinalpha + v * cosalpha
     return u_e.astype(np.float32), v_e.astype(np.float32)
 
 
 def interp_logp(var3d: np.ndarray, p3d: np.ndarray, plevs: np.ndarray) -> np.ndarray:
+    """Interpolate a 3D field to pressure levels using log-pressure."""
     nz, ny, nx = var3d.shape
     nplev = plevs.size
     out = np.full((nplev, ny, nx), np.nan, dtype=np.float32)
@@ -969,4 +995,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
