@@ -872,6 +872,12 @@ def main() -> int:
 
     args = ap.parse_args()
 
+    # If the user didn't supply --namelist but a default namelist.wps exists, use it.
+    # This avoids mismatched intervals / pressure levels that can cause metgrid to miss TT.
+    if not args.namelist and os.path.exists("namelist.wps"):
+        args.namelist = "namelist.wps"
+        print("INFO: Using default namelist.wps from current directory.")
+
     cfg: Optional[WpsConfig] = None
     target_dom: Optional[int] = args.domain
     namelist_interval = 0
@@ -913,6 +919,13 @@ def main() -> int:
         if demo:
             print(f"  soil point sample     : {', '.join(demo)}{' ...' if soil_point > 10 else ''}")
         print("=================")
+
+        needs_3d = any(name in wanted for name in ["TT", "UU", "VV", "SPECHUMD", "GHT", "RH"])
+        if needs_3d and (plevs is None or plevs.size == 0):
+            raise SystemExit(
+                "METGRID.TBL requires 3D pressure-level fields (e.g., TT), but no pressure levels were provided. "
+                "Supply --namelist with &mod_levs press_pa or pass --plevs-pa."
+            )
 
     os.makedirs(args.outdir, exist_ok=True)
     files = expand_inputs(args.input)
