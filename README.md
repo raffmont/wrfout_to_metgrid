@@ -23,5 +23,9 @@ pip install netCDF4 numpy pywinter
 
 ## Notes
 
+- If `--namelist` is omitted but `namelist.wps` exists in the current directory, the script will use it automatically
+  to keep interval stamps and pressure levels aligned with `metgrid.exe`.
+- Ensure `&mod_levs press_pa` is set in `namelist.wps` (or pass `--plevs-pa`) so mandatory 3D fields like `TT` can
+  be written for `metgrid.exe`.
 - Use `--infer-interval` to derive output cadence from the domain grid spacing.
 - Soil fields are generated to match soil range (`ST/SM/SWxxxxxx`) and point-depth (`SOILM###/SOILT###`) templates present in `METGRID.TBL`.
