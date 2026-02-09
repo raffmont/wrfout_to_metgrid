@@ -887,7 +887,7 @@ def main() -> int:
     if args.namelist:
         cfg = parse_namelist_wps(args.namelist)
         namelist_interval = cfg.interval_seconds or 0
-        inferred_prefix = cfg.ungrib_prefix
+        inferred_prefix = cfg.metgrid_fg_name or cfg.ungrib_prefix
         inferred_plevs = cfg.modlev_press_pa or []
         if target_dom is None:
             target_dom = cfg.max_dom
@@ -900,6 +900,13 @@ def main() -> int:
         plevs = np.array([float(x.strip()) for x in args.plevs_pa.split(",") if x.strip()], dtype=np.float32)
     else:
         plevs = np.array(inferred_plevs, dtype=np.float32) if inferred_plevs else None
+
+    if not args.metgrid_table:
+        for candidate in ("METGRID.TBL", os.path.join("metgrid", "METGRID.TBL")):
+            if os.path.exists(candidate):
+                args.metgrid_table = candidate
+                print(f"INFO: Using METGRID.TBL at {candidate}.")
+                break
 
     wanted: Optional[Set[str]] = None
     if args.metgrid_table:
