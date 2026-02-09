@@ -646,35 +646,47 @@ def extract_fields_as_arrays(
     PH = vget(ds, "PH", ti)
     PHB = vget(ds, "PHB", ti)
 
-    if any(x is None for x in [T_pert, P, PB, QV, U_stag, V_stag, PH, PHB]):
-        return out
+    p_full = None
+    if P is not None and PB is not None:
+        p_full = (P + PB).astype(np.float32)
 
-    p_full = (P + PB).astype(np.float32)
-    t_k = temp_k_from_wrf(T_pert, p_full).astype(np.float32)
-    z_m = z_mass_from_ph(PH, PHB).astype(np.float32)
-    u = destagger_x(U_stag).astype(np.float32)
-    v = destagger_y(V_stag).astype(np.float32)
+    t_k = None
+    if T_pert is not None and p_full is not None:
+        t_k = temp_k_from_wrf(T_pert, p_full).astype(np.float32)
 
-    if rotate_to_earth and ("COSALPHA" in ds.variables) and ("SINALPHA" in ds.variables):
-        ca = vget(ds, "COSALPHA", ti)
-        sa = vget(ds, "SINALPHA", ti)
-        if ca is not None and sa is not None:
-            u, v = rotate_uv_to_earth(u, v, ca, sa)
+    z_m = None
+    if PH is not None and PHB is not None:
+        z_m = z_mass_from_ph(PH, PHB).astype(np.float32)
+
+    u = None
+    if U_stag is not None:
+        u = destagger_x(U_stag).astype(np.float32)
+
+    v = None
+    if V_stag is not None:
+        v = destagger_y(V_stag).astype(np.float32)
+
+    if rotate_to_earth and u is not None and v is not None:
+        if ("COSALPHA" in ds.variables) and ("SINALPHA" in ds.variables):
+            ca = vget(ds, "COSALPHA", ti)
+            sa = vget(ds, "SINALPHA", ti)
+            if ca is not None and sa is not None:
+                u, v = rotate_uv_to_earth(u, v, ca, sa)
 
     def want(n: str) -> bool:
         return wanted is None or (n in wanted)
 
-    if want("TT"):
+    if want("TT") and t_k is not None and p_full is not None:
         out["TT_3D"] = (interp_logp(t_k, p_full, plevs), plevs, "3dp")
-    if want("UU"):
+    if want("UU") and u is not None and p_full is not None:
         out["UU_3D"] = (interp_logp(u, p_full, plevs), plevs, "3dp")
-    if want("VV"):
+    if want("VV") and v is not None and p_full is not None:
         out["VV_3D"] = (interp_logp(v, p_full, plevs), plevs, "3dp")
-    if want("SPECHUMD"):
+    if want("SPECHUMD") and QV is not None and p_full is not None:
         out["SPECHUMD_3D"] = (interp_logp(QV.astype(np.float32), p_full, plevs), plevs, "3dp")
-    if want("GHT"):
+    if want("GHT") and z_m is not None and p_full is not None:
         out["GHT_3D"] = (interp_logp(z_m, p_full, plevs), plevs, "3dp")
-    if want("RH"):
+    if want("RH") and QV is not None and t_k is not None and p_full is not None:
         rh3d = compute_rh_from_qv_T_p(QV.astype(np.float32), t_k, p_full)
         out["RH_3D"] = (interp_logp(rh3d, p_full, plevs), plevs, "3dp")
 

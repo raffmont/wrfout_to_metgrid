@@ -29,6 +29,8 @@ pip install netCDF4 numpy pywinter
   determine which fields to write.
 - Ensure `&mod_levs press_pa` is set in `namelist.wps` (or pass `--plevs-pa`) so mandatory 3D fields like `TT` can
   be written for `metgrid.exe`.
+- 3D variables are emitted independently when their source fields exist (for example, `TT` only needs `T`, `P`, and
+  `PB`), so missing humidity or wind components will not suppress temperature output.
 - The output prefix defaults to `&metgrid fg_name` when available; otherwise it falls back to the `&ungrib prefix`.
 - Use `--infer-interval` to derive output cadence from the domain grid spacing.
 - Soil fields are generated to match soil range (`ST/SM/SWxxxxxx`) and point-depth (`SOILM###/SOILT###`) templates present in `METGRID.TBL`.
